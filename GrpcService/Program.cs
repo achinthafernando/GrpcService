@@ -1,5 +1,3 @@
-using Grpc.Core;
-using GrpcService;
 using GrpcService.Services;
 using System.Net;
 using System.Net.Sockets;
@@ -16,30 +14,31 @@ var app = builder.Build();
 app.MapGrpcService<GreeterService>();
 app.MapGet("/", () => "Communication with gRPC endpoints must be made through a gRPC client. To learn how to create a client, visit: https://go.microsoft.com/fwlink/?linkid=2086909");
 
+var kestrelConfig = builder.Configuration.GetSection("Kestrel:Grpc");
+var ipAddressSrting = kestrelConfig.GetValue<string>("IPAddress") ?? "";
+var url = kestrelConfig.GetValue<string>("url") ?? "";
+var port = kestrelConfig.GetValue<string>("Port") ?? "";
+var gRpcServiceName = kestrelConfig.GetValue<string>("ServiceName") ?? "";
+
+app.Urls.Add($"{url}:{port}");
+
+
 app.Lifetime.ApplicationStarted.Register(() =>
 {
     // Resolve logger from dependency injection
     var logger = app.Services.GetRequiredService<ILogger<GreeterService>>();
-
-    // Start the gRPC server
-    IPAddress ipAddress = Dns.GetHostEntry(Dns.GetHostName()).AddressList.FirstOrDefault(ip => ip.AddressFamily == AddressFamily.InterNetwork) ?? IPAddress.Loopback;
-    
-    var grpcServer = new Server
-    {
-        Services = { Greeter.BindService(new GreeterService(logger)) },
-        Ports = { new ServerPort(ipAddress.ToString(), 8090, ServerCredentials.Insecure) }
-    };
-
-    grpcServer.Start();
-    logger.LogInformation($"Grpc service started on {ipAddress}:8090");
 
     // Start the UDP server in a separate task
     Task.Run(() =>
     {
         try
         {
-            UdpClient udpServer = new UdpClient(new IPEndPoint(ipAddress, 8888));
-            Console.WriteLine($"UDP Server 1 listening on {ipAddress}:8888");
+            var udpConfig = builder.Configuration.GetSection("Kestrel:Udp");
+            int.TryParse(udpConfig.GetValue<string>("Port") ?? "", out int udpPort);
+
+            IPAddress ipAddress = IPAddress.Parse(ipAddressSrting);
+            UdpClient udpServer = new UdpClient(new IPEndPoint(ipAddress, udpPort));
+            Console.WriteLine($"Udp {gRpcServiceName} listening on {ipAddressSrting}:{udpPort.ToString()}");
 
             while (true)
             {
